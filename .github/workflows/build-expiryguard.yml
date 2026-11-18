@@ -400,3 +400,230 @@ jobs:
           fun StatCard(title: String, count: String, color: Color) {
               Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                   Column(Modifier.padding(16.dp)) {
+                      Text(title, fontSize = 13.sp, color = Color.Gray)
+                      Text(count, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color)
+                  }
+              }
+          }
+
+          @Composable
+          fun ListView(products: List<ProductEntity>, onClick: (ProductEntity) -> Unit) {
+              var q by remember { mutableStateOf("") }
+              var f by remember { mutableStateOf("الكل") }
+              val list = products.filter {
+                  (it.name.contains(q, true) || (it.barcode?.contains(q) == true)) &&
+                  when (f) { "صالح" -> getStatus(it.expirationDate) == ProductStatus.VALID; "قريباً" -> getStatus(it.expirationDate) == ProductStatus.EXPIRING_SOON; "منتهي" -> getStatus(it.expirationDate) == ProductStatus.EXPIRED; else -> true }
+              }
+              Column(Modifier.fillMaxSize().padding(16.dp)) {
+                  OutlinedTextField(value = q, onValueChange = { q = it }, label = { Text("بحث بالاسم أو الباركود") }, modifier = Modifier.fillMaxWidth())
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      listOf("الكل", "صالح", "قريباً", "منتهي").forEach { tag -> FilterChip(selected = f == tag, onClick = { f = tag }, label = { Text(tag) }) }
+                  }
+                  LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(list) { ProductCard(it) { onClick(it) } } }
+              }
+          }
+
+          @Composable
+          fun ProductCard(p: ProductEntity, onClick: () -> Unit) {
+              val st = getStatus(p.expirationDate)
+              val col = when (st) { ProductStatus.VALID -> EmeraldGreen; ProductStatus.EXPIRING_SOON -> WarningAmber; ProductStatus.EXPIRED -> DangerRed }
+              val txt = when (st) { ProductStatus.VALID -> "صالح"; ProductStatus.EXPIRING_SOON -> "قريباً"; ProductStatus.EXPIRED -> "منتهي" }
+              val sdf = remember { SimpleDateFormat("dd/MM/yyyy", Locale("ar")) }
+              Card(Modifier.fillMaxWidth().clickable { onClick() }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                  Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                      if (!p.imagePath.isNullOrEmpty()) Image(rememberAsyncImagePainter(File(p.imagePath)), null, Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                      else Box(Modifier.size(56.dp).background(Color.DarkGray, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Inventory2, null, tint = Color.White) }
+                      Spacer(Modifier.width(12.dp))
+                      Column(Modifier.weight(1f)) {
+                          Text(p.name, fontWeight = FontWeight.Bold)
+                          Text("الكمية: ${p.quantity} | الانتهاء: ${sdf.format(Date(p.expirationDate))}", fontSize = 12.sp, color = Color.Gray)
+                      }
+                      Text(txt, color = col, fontWeight = FontWeight.Bold)
+                  }
+              }
+          }
+
+          @Composable
+          fun ProductForm(existing: ProductEntity?, defRem: String, onSave: (ProductEntity) -> Unit, onCancel: () -> Unit) {
+              val ctx = LocalContext.current
+              var name by remember { mutableStateOf(existing?.name ?: "") }
+              var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
+              var cat by remember { mutableStateOf(existing?.category ?: "عام") }
+              var qty by remember { mutableStateOf(existing?.quantity?.toString() ?: "1") }
+              var loc by remember { mutableStateOf(existing?.storageLocation ?: "") }
+              var notes by remember { mutableStateOf(existing?.notes ?: "") }
+              var img by remember { mutableStateOf(existing?.imagePath) }
+              var prod by remember { mutableLongStateOf(existing?.productionDate ?: System.currentTimeMillis()) }
+              var exp by remember { mutableLongStateOf(existing?.expirationDate ?: (System.currentTimeMillis() + TimeUnit.DAYS.toMillis(30))) }
+              var remDays by remember { mutableStateOf((existing?.reminderDays ?: defRem).split(",").mapNotNull { it.toIntOrNull() }.toSet()) }
+              var openCam by remember { mutableStateOf(false) }
+
+              val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) openCam = true }
+              val gal = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                  uri?.let {
+                      val f = File(ctx.filesDir, "images/G_${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs() }
+                      ctx.contentResolver.openInputStream(it)?.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                      img = f.absolutePath
+                  }
+              }
+
+              if (openCam) {
+                  CameraScreen(onCaptured = { img = it; openCam = false }, onClose = { openCam = false })
+                  return
+              }
+
+              val sdf = remember { SimpleDateFormat("dd/MM/yyyy", Locale("ar")) }
+              Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  Text(if (existing == null) "إضافة منتج" else "تعديل منتج", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Button(onClick = {
+                          if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) openCam = true
+                          else camPerm.launch(Manifest.permission.CAMERA)
+                      }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.weight(1f)) { Text("كاميرا داخلية") }
+                      OutlinedButton(onClick = { gal.launch("image/*") }, modifier = Modifier.weight(1f)) { Text("الاستوديو") }
+                  }
+                  img?.let { Image(rememberAsyncImagePainter(File(it)), null, Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop) }
+                  OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المنتج *") }, modifier = Modifier.fillMaxWidth())
+                  OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("الباركود") }, modifier = Modifier.fillMaxWidth())
+                  OutlinedTextField(value = cat, onValueChange = { cat = it }, label = { Text("التصنيف") }, modifier = Modifier.fillMaxWidth())
+                  OutlinedTextField(value = qty, onValueChange = { qty = it }, label = { Text("الكمية") }, modifier = Modifier.fillMaxWidth())
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      OutlinedButton(onClick = {
+                          val c = Calendar.getInstance().apply { timeInMillis = prod }
+                          DatePickerDialog(ctx, { _, y, m, d -> c.set(y, m, d); prod = c.timeInMillis }, c.get(1), c.get(2), c.get(5)).show()
+                      }, modifier = Modifier.weight(1f)) { Text("الإنتاج: ${sdf.format(Date(prod))}") }
+                      OutlinedButton(onClick = {
+                          val c = Calendar.getInstance().apply { timeInMillis = exp }
+                          DatePickerDialog(ctx, { _, y, m, d -> c.set(y, m, d); exp = c.timeInMillis }, c.get(1), c.get(2), c.get(5)).show()
+                      }, modifier = Modifier.weight(1f)) { Text("الانتهاء: ${sdf.format(Date(exp))}") }
+                  }
+                  OutlinedTextField(value = loc, onValueChange = { loc = it }, label = { Text("الرف / الموقع") }, modifier = Modifier.fillMaxWidth())
+                  OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") }, modifier = Modifier.fillMaxWidth())
+                  LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      items(listOf(30, 15, 10, 7, 3, 1, 0)) { d ->
+                          FilterChip(selected = remDays.contains(d), onClick = { remDays = if (remDays.contains(d)) remDays - d else remDays + d }, label = { Text(if (d == 0) "نفس اليوم" else "$d يوم") })
+                      }
+                  }
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      Button(onClick = {
+                          if (name.isBlank() || exp <= prod) { Toast.makeText(ctx, "تأكد من الاسم وصحة التواريخ", Toast.LENGTH_SHORT).show(); return@Button }
+                          onSave(ProductEntity(existing?.id ?: 0, name, barcode.ifBlank { null }, cat, qty.toIntOrNull() ?: 1, prod, exp, img, loc.ifBlank { null }, notes.ifBlank { null }, remDays.joinToString(",")))
+                      }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.weight(1f)) { Text("حفظ") }
+                      OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("إلغاء") }
+                  }
+              }
+          }
+
+          @Composable
+          fun CameraScreen(onCaptured: (String) -> Unit, onClose: () -> Unit) {
+              val ctx = LocalContext.current
+              val owner = LocalLifecycleOwner.current
+              var file by remember { mutableStateOf<File?>(null) }
+              val cap = remember { ImageCapture.Builder().build() }
+              Box(Modifier.fillMaxSize().background(Color.Black)) {
+                  if (file == null) {
+                      AndroidView(factory = { c ->
+                          PreviewView(c).apply {
+                              val f = ProcessCameraProvider.getInstance(c)
+                              f.addListener({
+                                  val p = f.get()
+                                  val prev = Preview.Builder().build().also { it.setSurfaceProvider(surfaceProvider) }
+                                  p.unbindAll(); p.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, prev, cap)
+                              }, ContextCompat.getMainExecutor(c))
+                          }
+                      }, modifier = Modifier.fillMaxSize())
+                      IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) { Icon(Icons.Default.Close, null, tint = Color.White) }
+                      Button(onClick = {
+                          val out = File(ctx.filesDir, "images/C_${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs() }
+                          cap.takePicture(ImageCapture.OutputFileOptions.Builder(out).build(), ContextCompat.getMainExecutor(ctx), object : ImageCapture.OnImageSavedCallback {
+                              override fun onImageSaved(r: ImageCapture.OutputFileResults) { file = out }
+                              override fun onError(e: ImageCaptureException) {}
+                          })
+                      }, shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp).size(70.dp)) { Icon(Icons.Default.CameraAlt, null) }
+                  } else {
+                      Image(rememberAsyncImagePainter(Uri.fromFile(file)), null, Modifier.fillMaxSize())
+                      Row(Modifier.align(Alignment.BottomCenter).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                          Button(onClick = { file?.delete(); file = null }, colors = ButtonDefaults.buttonColors(containerColor = DangerRed)) { Text("إعادة") }
+                          Button(onClick = { file?.absolutePath?.let(onCaptured) }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen)) { Text("اعتماد الصورة") }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun DetailsView(p: ProductEntity, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+              val sdf = remember { SimpleDateFormat("dd/MM/yyyy", Locale("ar")) }
+              val rem = TimeUnit.MILLISECONDS.toDays(p.expirationDate - System.currentTimeMillis())
+              Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  IconButton(onClick = onBack) { Icon(Icons.Default.ArrowForward, null) }
+                  p.imagePath?.let { Image(rememberAsyncImagePainter(File(it)), null, Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop) }
+                  Text(p.name, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                  Text("الإنتاج: ${sdf.format(Date(p.productionDate))} | الانتهاء: ${sdf.format(Date(p.expirationDate))}")
+                  Text("المتبقي: $rem يوم | الكمية: ${p.quantity}")
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Button(onClick = onEdit, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.weight(1f)) { Text("تعديل") }
+                      Button(onClick = onDelete, colors = ButtonDefaults.buttonColors(containerColor = DangerRed), modifier = Modifier.weight(1f)) { Text("حذف") }
+                  }
+              }
+          }
+
+          @Composable
+          fun ReportsView(products: List<ProductEntity>) {
+              val ctx = LocalContext.current
+              val now = System.currentTimeMillis()
+              Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                  StatCard("تنتهي هذا الأسبوع", "${products.count { it.expirationDate in now..(now + TimeUnit.DAYS.toMillis(7)) }}", WarningAmber)
+                  StatCard("تنتهي هذا الشهر", "${products.count { it.expirationDate in now..(now + TimeUnit.DAYS.toMillis(30)) }}", Color(0xFF3B82F6))
+                  StatCard("منتهية الصلاحية", "${products.count { it.expirationDate < now }}", DangerRed)
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                      Button(onClick = {
+                          val f = File(ctx.cacheDir, "Report.csv").apply { writeText("\uFEFFالاسم,الكمية\n" + products.joinToString("\n") { "${it.name},${it.quantity}" }) }
+                          val u = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f)
+                          ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/csv"; putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "تصدير CSV"))
+                      }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.weight(1f)) { Text("تصدير CSV") }
+                      Button(onClick = {
+                          val doc = PdfDocument()
+                          val page = doc.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+                          var y = 60f
+                          products.take(25).forEach { page.canvas.drawText("${it.name} - ${it.quantity}", 40f, y, Paint().apply { textSize = 14f }); y += 25f }
+                          doc.finishPage(page)
+                          val f = File(ctx.cacheDir, "Report.pdf").apply { outputStream().use { doc.writeTo(it) }; doc.close() }
+                          val u = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f)
+                          ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "تصدير PDF"))
+                      }, modifier = Modifier.weight(1f)) { Text("تصدير PDF") }
+                  }
+              }
+          }
+
+          @Composable
+          fun SettingsView(isDark: Boolean, onTheme: () -> Unit, notif: Boolean, onNotif: (Boolean) -> Unit, def: String, onDef: (String) -> Unit, products: List<ProductEntity>, onRestore: (List<ProductEntity>) -> Unit) {
+              val ctx = LocalContext.current
+              val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                  uri?.let {
+                      val txt = ctx.contentResolver.openInputStream(it)?.bufferedReader()?.readText() ?: ""
+                      val list: List<ProductEntity> = Gson().fromJson(txt, object : TypeToken<List<ProductEntity>>() {}.type) ?: emptyList()
+                      if (list.isNotEmpty()) onRestore(list)
+                  }
+              }
+              Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) { Text("تفعيل الإشعارات", Modifier.weight(1f)); Switch(notif, onNotif) }
+                  Row(verticalAlignment = Alignment.CenterVertically) { Text("الوضع الداكن", Modifier.weight(1f)); Switch(isDark, { onTheme() }) }
+                  OutlinedTextField(value = def, onValueChange = onDef, label = { Text("أيام التنبيه الافتراضية") }, modifier = Modifier.fillMaxWidth())
+                  Button(onClick = {
+                      val f = File(ctx.cacheDir, "Backup.json").apply { writeText(Gson().toJson(products)) }
+                      val u = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f)
+                      ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "application/json"; putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "نسخ احتياطي"))
+                  }, colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen), modifier = Modifier.fillMaxWidth()) { Text("نسخ احتياطي JSON") }
+                  OutlinedButton(onClick = { launcher.launch("application/json") }, modifier = Modifier.fillMaxWidth()) { Text("استعادة JSON") }
+              }
+          }
+          EOF
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExpiryGuard-2.0-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
