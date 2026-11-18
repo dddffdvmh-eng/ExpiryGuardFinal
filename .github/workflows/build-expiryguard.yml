@@ -21,12 +21,15 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Project Part 1
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Generate Complete Project
         run: |
           mkdir -p app/src/main/java/com/expiryguard/app/data/local
           mkdir -p app/src/main/java/com/expiryguard/app/notifications
-          mkdir -p app/src/main/java/com/expiryguard/app/ui/camera
-          mkdir -p app/src/main/java/com/expiryguard/app/utils
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/values
 
@@ -54,7 +57,8 @@ jobs:
           kotlin.code.style=official
           android.nonTransitiveRClass=true
           EOF
-                    cat << 'EOF' > app/build.gradle.kts
+
+          cat << 'EOF' > app/build.gradle.kts
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
@@ -142,6 +146,7 @@ jobs:
               </application>
           </manifest>
           EOF
+
           cat << 'EOF' > app/src/main/java/com/expiryguard/app/ExpiryGuardApp.kt
           package com.expiryguard.app
           import android.app.Application
@@ -218,62 +223,11 @@ jobs:
                   val exp = inputData.getString("exp_date") ?: ""
                   val id = inputData.getLong("product_id", 0L).toInt() + inputData.getInt("days_before", 0)
                   val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      manager.createNotificationChannel(NotificationChannel("expiry_alerts", "تنبيهات الصلاحية", NotificationManager.IMPORTANCE_HIGH))
-                  }
-                  val msg = "المنتج: $name\nتاريخ الانتهاء: $exp\nيرجى مراجعة المنتج وإزالته من الرف عند انتهاء صلاحيته."
-                  val notif = NotificationCompat.Builder(context, "expiry_alerts")
-                      .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                      .setContentTitle("⚠️ تنبيه انتهاء صلاحية")
-                      .setContentText("المنتج: $name - ينتهي في $exp")
-                      .setStyle(NotificationCompat.BigTextStyle().bigText(msg))
-                      .setPriority(NotificationCompat.PRIORITY_HIGH)
-                      .setAutoCancel(true).build()
-                  manager.notify(id, notif)
-                  return Result.success()
-              }
-          }
-
-          object NotificationScheduler {
-              fun scheduleProductReminders(context: Context, product: ProductEntity) {
-                  cancelProductReminders(context, product.id)
-                  val wm = WorkManager.getInstance(context)
-                  val expStr = SimpleDateFormat("dd/MM/yyyy", Locale("ar")).format(Date(product.expirationDate))
-                  val now = System.currentTimeMillis()
-                  product.reminderDays.split(",").mapNotNull { it.trim().toIntOrNull() }.forEach { days ->
-                      val delay = (product.expirationDate - TimeUnit.DAYS.toMillis(days.toLong())) - now
-                      if (delay > 0) {
-                          val req = OneTimeWorkRequestBuilder<ExpirationWorker>()
-                              .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-                              .setInputData(workDataOf("product_id" to product.id, "product_name" to product.name, "exp_date" to expStr, "days_before" to days))
-                              .addTag("product_${product.id}").build()
-                          wm.enqueueUniqueWork("rem_${product.id}_$days", ExistingWorkPolicy.REPLACE, req)
-                      }
-                  }
-              }
-              fun cancelProductReminders(context: Context, productId: Long) {
-                  WorkManager.getInstance(context).cancelAllWorkByTag("product_$productId")
-              }
-          }
-
-          class BootReceiver : BroadcastReceiver() {
-              override fun onReceive(context: Context, intent: Intent) {
-                  if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-                      CoroutineScope(Dispatchers.IO).launch {
-                          AppDatabase.getDatabase(context).productDao().getAllProductsSync().forEach {
-                              NotificationScheduler.scheduleProductReminders(context, it)
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
           cat << 'EOF' > app/src/main/java/com/expiryguard/app/MainActivity.kt
           package com.expiryguard.app
 
           import android.Manifest
           import android.app.DatePickerDialog
-          import android.content.Context
           import android.content.Intent
           import android.content.pm.PackageManager
           import android.graphics.Paint
@@ -444,3 +398,5 @@ jobs:
 
           @Composable
           fun StatCard(title: String, count: String, color: Color) {
+              Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                  Column(Modifier.padding(16.dp)) {
