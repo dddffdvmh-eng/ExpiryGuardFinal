@@ -1,0 +1,446 @@
+name: Build ExpiryGuard APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Project Part 1
+        run: |
+          mkdir -p app/src/main/java/com/expiryguard/app/data/local
+          mkdir -p app/src/main/java/com/expiryguard/app/notifications
+          mkdir -p app/src/main/java/com/expiryguard/app/ui/camera
+          mkdir -p app/src/main/java/com/expiryguard/app/utils
+          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main/res/values
+
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "ExpiryGuard2"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.2.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+              id("com.google.devtools.ksp") version "1.9.22-1.0.17" apply false
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+                    cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("com.google.devtools.ksp")
+          }
+          android {
+              namespace = "com.expiryguard.app"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.expiryguard.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "2.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
+          }
+          dependencies {
+              implementation("androidx.core:core-ktx:1.12.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+              implementation("androidx.activity:activity-compose:1.8.2")
+              implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.room:room-runtime:2.6.1")
+              implementation("androidx.room:room-ktx:2.6.1")
+              ksp("androidx.room:room-compiler:2.6.1")
+              implementation("androidx.camera:camera-core:1.3.1")
+              implementation("androidx.camera:camera-camera2:1.3.1")
+              implementation("androidx.camera:camera-lifecycle:1.3.1")
+              implementation("androidx.camera:camera-view:1.3.1")
+              implementation("androidx.work:work-runtime-ktx:2.9.0")
+              implementation("io.coil-kt:coil-compose:2.5.0")
+              implementation("com.google.code.gson:gson:2.10.1")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/res/xml/file_paths.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths>
+              <files-path name="my_images" path="images/" />
+              <cache-path name="my_exports" path="/" />
+          </paths>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values/themes.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.ExpiryGuard" parent="android:Theme.Material.NoActionBar" />
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://android.com">
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <application
+                  android:name=".ExpiryGuardApp"
+                  android:allowBackup="true"
+                  android:label="حارس الصلاحية 2.0"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.ExpiryGuard">
+                  <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <receiver android:name=".notifications.BootReceiver" android:enabled="true" android:exported="true">
+                      <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+                  </receiver>
+                  <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+                      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+                  </provider>
+              </application>
+          </manifest>
+          EOF
+          cat << 'EOF' > app/src/main/java/com/expiryguard/app/ExpiryGuardApp.kt
+          package com.expiryguard.app
+          import android.app.Application
+          class ExpiryGuardApp : Application()
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/expiryguard/app/data/local/ProductEntity.kt
+          package com.expiryguard.app.data.local
+          import androidx.room.*
+          import kotlinx.coroutines.flow.Flow
+
+          enum class ProductStatus { VALID, EXPIRING_SOON, EXPIRED }
+
+          @Entity(tableName = "products")
+          data class ProductEntity(
+              @PrimaryKey(autoGenerate = true) val id: Long = 0,
+              val name: String,
+              val barcode: String? = null,
+              val category: String,
+              val quantity: Int,
+              val productionDate: Long,
+              val expirationDate: Long,
+              val imagePath: String? = null,
+              val storageLocation: String? = null,
+              val notes: String? = null,
+              val reminderDays: String = "30,7,3,1,0",
+              val needsFollowUp: Boolean = false
+          )
+
+          @Dao
+          interface ProductDao {
+              @Query("SELECT * FROM products ORDER BY expirationDate ASC")
+              fun getAllProducts(): Flow<List<ProductEntity>>
+              @Query("SELECT * FROM products")
+              suspend fun getAllProductsSync(): List<ProductEntity>
+              @Insert(onConflict = OnConflictStrategy.REPLACE)
+              suspend fun insertProduct(product: ProductEntity): Long
+              @Delete
+              suspend fun deleteProduct(product: ProductEntity)
+              @Insert(onConflict = OnConflictStrategy.REPLACE)
+              suspend fun insertAll(products: List<ProductEntity>)
+          }
+
+          @Database(entities = [ProductEntity::class], version = 1, exportSchema = false)
+          abstract class AppDatabase : RoomDatabase() {
+              abstract fun productDao(): ProductDao
+              companion object {
+                  @Volatile private var INSTANCE: AppDatabase? = null
+                  fun getDatabase(context: android.content.Context): AppDatabase {
+                      return INSTANCE ?: synchronized(this) {
+                          Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "expiry_guard_db").build().also { INSTANCE = it }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/expiryguard/app/notifications/NotificationScheduler.kt
+          package com.expiryguard.app.notifications
+          import android.app.*
+          import android.content.*
+          import android.os.Build
+          import androidx.core.app.NotificationCompat
+          import androidx.work.*
+          import com.expiryguard.app.data.local.*
+          import kotlinx.coroutines.*
+          import java.text.SimpleDateFormat
+          import java.util.*
+          import java.util.concurrent.TimeUnit
+
+          class ExpirationWorker(private val context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+              override suspend fun doWork(): Result {
+                  val name = inputData.getString("product_name") ?: return Result.failure()
+                  val exp = inputData.getString("exp_date") ?: ""
+                  val id = inputData.getLong("product_id", 0L).toInt() + inputData.getInt("days_before", 0)
+                  val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      manager.createNotificationChannel(NotificationChannel("expiry_alerts", "تنبيهات الصلاحية", NotificationManager.IMPORTANCE_HIGH))
+                  }
+                  val msg = "المنتج: $name\nتاريخ الانتهاء: $exp\nيرجى مراجعة المنتج وإزالته من الرف عند انتهاء صلاحيته."
+                  val notif = NotificationCompat.Builder(context, "expiry_alerts")
+                      .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                      .setContentTitle("⚠️ تنبيه انتهاء صلاحية")
+                      .setContentText("المنتج: $name - ينتهي في $exp")
+                      .setStyle(NotificationCompat.BigTextStyle().bigText(msg))
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setAutoCancel(true).build()
+                  manager.notify(id, notif)
+                  return Result.success()
+              }
+          }
+
+          object NotificationScheduler {
+              fun scheduleProductReminders(context: Context, product: ProductEntity) {
+                  cancelProductReminders(context, product.id)
+                  val wm = WorkManager.getInstance(context)
+                  val expStr = SimpleDateFormat("dd/MM/yyyy", Locale("ar")).format(Date(product.expirationDate))
+                  val now = System.currentTimeMillis()
+                  product.reminderDays.split(",").mapNotNull { it.trim().toIntOrNull() }.forEach { days ->
+                      val delay = (product.expirationDate - TimeUnit.DAYS.toMillis(days.toLong())) - now
+                      if (delay > 0) {
+                          val req = OneTimeWorkRequestBuilder<ExpirationWorker>()
+                              .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                              .setInputData(workDataOf("product_id" to product.id, "product_name" to product.name, "exp_date" to expStr, "days_before" to days))
+                              .addTag("product_${product.id}").build()
+                          wm.enqueueUniqueWork("rem_${product.id}_$days", ExistingWorkPolicy.REPLACE, req)
+                      }
+                  }
+              }
+              fun cancelProductReminders(context: Context, productId: Long) {
+                  WorkManager.getInstance(context).cancelAllWorkByTag("product_$productId")
+              }
+          }
+
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                      CoroutineScope(Dispatchers.IO).launch {
+                          AppDatabase.getDatabase(context).productDao().getAllProductsSync().forEach {
+                              NotificationScheduler.scheduleProductReminders(context, it)
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+          cat << 'EOF' > app/src/main/java/com/expiryguard/app/MainActivity.kt
+          package com.expiryguard.app
+
+          import android.Manifest
+          import android.app.DatePickerDialog
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Paint
+          import android.graphics.pdf.PdfDocument
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.Toast
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.camera.core.*
+          import androidx.camera.lifecycle.ProcessCameraProvider
+          import androidx.camera.view.PreviewView
+          import androidx.compose.foundation.*
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.*
+          import androidx.compose.foundation.shape.*
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.*
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.*
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.*
+          import androidx.compose.ui.viewinterop.AndroidView
+          import androidx.core.content.*
+          import coil.compose.rememberAsyncImagePainter
+          import com.expiryguard.app.data.local.*
+          import com.expiryguard.app.notifications.NotificationScheduler
+          import com.google.gson.Gson
+          import com.google.gson.reflect.TypeToken
+          import kotlinx.coroutines.launch
+          import java.io.File
+          import java.text.SimpleDateFormat
+          import java.util.*
+          import java.util.concurrent.TimeUnit
+
+          val DarkNavyBg = Color(0xFF0A1128)
+          val NavyCard = Color(0xFF14213D)
+          val EmeraldGreen = Color(0xFF10B981)
+          val WarningAmber = Color(0xFFF59E0B)
+          val DangerRed = Color(0xFFEF4444)
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      var isDark by remember { mutableStateOf(true) }
+                      val colors = if (isDark) darkColorScheme(primary = EmeraldGreen, background = DarkNavyBg, surface = NavyCard, onBackground = Color.White, onSurface = Color.White)
+                                   else lightColorScheme(primary = EmeraldGreen, background = Color(0xFFF1F5F9), surface = Color.White)
+                      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                          MaterialTheme(colorScheme = colors) {
+                              MainApp(isDark) { isDark = !isDark }
+                          }
+                      }
+                  }
+              }
+          }
+
+          fun getStatus(exp: Long): ProductStatus {
+              val now = System.currentTimeMillis()
+              val diff = TimeUnit.MILLISECONDS.toDays(exp - now)
+              return when {
+                  exp < now -> ProductStatus.EXPIRED
+                  diff <= 15 -> ProductStatus.EXPIRING_SOON
+                  else -> ProductStatus.VALID
+              }
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun MainApp(isDark: Boolean, onToggleTheme: () -> Unit) {
+              val ctx = LocalContext.current
+              val db = remember { AppDatabase.getDatabase(ctx) }
+              val products by db.productDao().getAllProducts().collectAsState(initial = emptyList())
+              val scope = rememberCoroutineScope()
+              var tab by remember { mutableIntStateOf(0) }
+              var editItem by remember { mutableStateOf<ProductEntity?>(null) }
+              var showForm by remember { mutableStateOf(false) }
+              var detailItem by remember { mutableStateOf<ProductEntity?>(null) }
+              var notifEnabled by remember { mutableStateOf(true) }
+              var defRem by remember { mutableStateOf("30,7,3,1,0") }
+
+              val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+              LaunchedEffect(Unit) {
+                  if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                      notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                  }
+              }
+
+              if (showForm) {
+                  ProductForm(editItem, defRem, onSave = { p ->
+                      scope.launch {
+                          val id = db.productDao().insertProduct(p)
+                          val saved = p.copy(id = if (p.id == 0L) id else p.id)
+                          if (notifEnabled) NotificationScheduler.scheduleProductReminders(ctx, saved)
+                          else NotificationScheduler.cancelProductReminders(ctx, saved.id)
+                          showForm = false; editItem = null
+                      }
+                  }, onCancel = { showForm = false; editItem = null })
+                  return
+              }
+
+              detailItem?.let { p ->
+                  DetailsView(p, onBack = { detailItem = null }, onEdit = { editItem = p; detailItem = null; showForm = true }, onDelete = {
+                      scope.launch { NotificationScheduler.cancelProductReminders(ctx, p.id); db.productDao().deleteProduct(p); detailItem = null }
+                  })
+                  return
+              }
+
+              Scaffold(
+                  topBar = { TopAppBar(title = { Text("حارس الصلاحية 2.0", fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)) },
+                  floatingActionButton = {
+                      if (tab < 2) FloatingActionButton(onClick = { editItem = null; showForm = true }, containerColor = EmeraldGreen) {
+                          Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
+                      }
+                  },
+                  bottomBar = {
+                      NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                          NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Dashboard, null) }, label = { Text("الرئيسية") })
+                          NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.Inventory, null) }, label = { Text("المنتجات") })
+                          NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.Assessment, null) }, label = { Text("التقارير") })
+                          NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("الإعدادات") })
+                      }
+                  }
+              ) { pad ->
+                  Box(Modifier.padding(pad).fillMaxSize()) {
+                      when (tab) {
+                          0 -> DashboardView(products) { detailItem = it }
+                          1 -> ListView(products) { detailItem = it }
+                          2 -> ReportsView(products)
+                          3 -> SettingsView(isDark, onToggleTheme, notifEnabled, { notifEnabled = it }, defRem, { defRem = it }, products) { list ->
+                              scope.launch { db.productDao().insertAll(list); list.forEach { NotificationScheduler.scheduleProductReminders(ctx, it) } }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun DashboardView(products: List<ProductEntity>, onClick: (ProductEntity) -> Unit) {
+              val valid = products.count { getStatus(it.expirationDate) == ProductStatus.VALID }
+              val soon = products.count { getStatus(it.expirationDate) == ProductStatus.EXPIRING_SOON }
+              val expired = products.count { getStatus(it.expirationDate) == ProductStatus.EXPIRED }
+              LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                  item { StatCard("إجمالي المنتجات", "${products.size}", EmeraldGreen) }
+                  item {
+                      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          Box(Modifier.weight(1f)) { StatCard("المنتجات الصالحة", "$valid", EmeraldGreen) }
+                          Box(Modifier.weight(1f)) { StatCard("تنتهي قريباً", "$soon", WarningAmber) }
+                      }
+                  }
+                  item {
+                      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          Box(Modifier.weight(1f)) { StatCard("منتهية الصلاحية", "$expired", DangerRed) }
+                          Box(Modifier.weight(1f)) { StatCard("تحتاج لمتابعة", "${soon + expired}", Color(0xFF3B82F6)) }
+                      }
+                  }
+                  items(products.take(10)) { ProductCard(it) { onClick(it) } }
+              }
+          }
+
+          @Composable
+          fun StatCard(title: String, count: String, color: Color) {
